@@ -24,10 +24,23 @@ memory = ConversationBufferMemory(return_messages=True)
 conversation = ConversationChain(memory=memory, prompt=prompt, llm=llm)
 
 
-def get_response(prompt, style):
+def rewrite_in_style(prompt, style):
     _prompt = f"""
 
     Rewrite the following text in the style of {style}: 
+    
+    {prompt}
+    
+    """
+
+    response = conversation.predict(input=_prompt)
+
+    return response
+
+def give_feedback(prompt, style):
+    _prompt = f"""
+
+    Give feedback on the following text description - is it clear? Is everything important included? Speak in the style of {style}: 
     
     {prompt}
     

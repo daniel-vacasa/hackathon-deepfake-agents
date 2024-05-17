@@ -6,44 +6,57 @@ from dataclasses import dataclass
 # Import from 3rd party libraries
 import streamlit as st
 
-from agents import get_response
+import agents
+from agents import rewrite_in_style
 from fakeyou import FakeYou
 
 fakeyou_api = FakeYou()
 
-def generate_audio_text(prompt, style):
-    return get_response(prompt=prompt, style=style)
+def generate_description(prompt, style):
+    return agents.rewrite_in_style(prompt=prompt, style=style)
+
+def generate_review(prompt, style):
+    return agents.give_feedback(prompt=prompt, style=style)
 
 
-def generate_audio(prompt, style):
+def generate_dialogue(prompt, copywriter, reviewer):
+    writer_output = generate_description(prompt, copywriter)
+    reviewer_output = generate_review(writer_output, reviewer)
+
+def generate_audio(prompt, copywriter, reviewer):
 
     if prompt == "":
-        st.session_state.text_error = "Please enter a prompt."
-        return
+        # st.session_state.text_error = "Please enter a prompt."
+        # return
+        prompt = placeholder_prompt
 
     with text_spinner_placeholder:
-        with st.spinner("Please wait while we process the text..."):
-            audio_text = generate_audio_text(prompt=prompt, style=style)
+        with st.spinner("Generating the writer output..."):
+            writer_output = generate_description(prompt, copywriter)
 
-            st.session_state.audio_text = audio_text
+            wav = fakeyou_api.say(text=writer_output, tts_model_token=voices[copywriter])
+            audio_path = wav.save()
+
+            if audio_path != "":
+                st.session_state.conversation.append((copywriter, writer_output, audio_path))
+
+            logging.info("copy: " + writer_output)
+            # st.session_state.conversation.append = audio_text
 
     with text_spinner_placeholder_2:
-        with st.spinner("Please wait while we generate the audio..."):
+        with st.spinner("Generating the review..."):
 
-            if st.session_state.input_file_path != "":
-                # audio_path = with_custom_voice(podcaster=podcaster, guest=guest, description=prompt, prompt=st.session_state.podcast_generate, file_path=st.session_state.input_file_path)
-                audio_path = "not_implemented"
+            reviewer_output = generate_review(writer_output, reviewer)
+            logging.info("feedback: " + reviewer_output)
 
-                if audio_path != "":
-                    st.session_state.output_file_path = audio_path
+            wav = fakeyou_api.say(text=reviewer_output, tts_model_token=voices[reviewer])
+            audio_path = wav.save()
 
-            else:
+            if audio_path != "":
+                st.session_state.conversation.append((reviewer, reviewer_output, audio_path))
 
-                wav = fakeyou_api.say(text=st.session_state.audio_text, tts_model_token=voices[style])
-                audio_path = wav.save()
+                # logging.info("conversation: \n" + "\n".join(st.session_state.conversation))
 
-                if audio_path != "":
-                    st.session_state.output_file_path = audio_path
 
 
 @dataclass
@@ -83,6 +96,8 @@ voices = {
     "Frank Sinatra": "weight_57z4cqj0v00ft34hzy6bt2ksy",
 }
 
+placeholder_prompt = "A beach property on the West coast with a hot tub and a golden toilet."
+
 # Configure logger
 logging.basicConfig(format="\n%(asctime)s\n%(message)s", level=logging.INFO, force=True)
 
@@ -92,8 +107,17 @@ st.set_page_config(page_title="Vacasa Copywriters", page_icon=":bath:")
 
 
 # Store the initial value of widgets in session state
-if "audio_text" not in st.session_state:
-    st.session_state.audio_text = ""
+if "conversation" not in st.session_state:
+    st.session_state.conversation = []
+
+if "copywriter" not in st.session_state:
+    st.session_state.copywriter = ""
+
+if "reviewer" not in st.session_state:
+    st.session_state.reviewer = ""
+
+if "narrator" not in st.session_state:
+    st.session_state.narrator = ""
 
 if "output_file_path" not in st.session_state:
     st.session_state.output_file_path = ""
@@ -150,32 +174,44 @@ st.markdown(
 #     st.session_state.input_file_path = "sample.mp3"
 
 
-# selectbox
-voice = st.selectbox('Choose your voice', (name for name in voices))
 
+col1, col2, col3 = st.columns(3)
 
-# col1, col2 = st.columns(2)
-#
-# with col1:
-#     podcaster = st.text_input(label="Podcaster", placeholder="Ex. Lex Fridman")
-#
-# with col2:
-#     guest = st.text_input(label="Guest", placeholder="Ex. Elon Musk")
-#
+with col1:
+    st.session_state.copywriter = st.selectbox('Copywriter', (name for name in voices))
+
+with col2:
+    st.session_state.reviewer = st.selectbox('Reviewer', (name for name in voices))
+
+with col3:
+    st.session_state.narrator = st.selectbox('Narrator', (name for name in voices))
 
 
 # textarea
-prompt = st.text_area(label="Unit description", placeholder="Ex: A riverside property on the West coast with a hot tub and a golden toilet.", height=100)
+prompt = st.text_area(label="Unit description", placeholder=f"Ex: {placeholder_prompt}", height=100)
 
+
+par1, par2, par3, par4 = st.columns(4)
+with par1:
+    param1 = st.text_input(label="Location", placeholder="West coast")
+
+with par2:
+    param2 = st.text_input(label="Size", placeholder="Huge")
+
+with par3:
+    param3 = st.text_input(label="Amenities", placeholder="Hot tub and golden toilet")
+
+with par4:
+    param4 = st.text_input(label="City", placeholder="LA")
 
 # button
 st.button(
-    label="Generate audio",
+    label="Generate",
     help="Click to generate audio",
     key="generate_audio",
     type="primary",
     on_click=generate_audio,
-    args=(prompt, voice),
+    args=(prompt, st.session_state.copywriter, st.session_state.reviewer),
 )
 
 
@@ -185,17 +221,14 @@ if st.session_state.text_error:
     st.error(st.session_state.text_error)
 
 
-if st.session_state.audio_text:
-    st.markdown("""---""")
-    st.subheader("Read Audio")
-    st.text_area(label="You may read the result while the audio is being generated.", value=st.session_state.audio_text, )
+if st.session_state.conversation:
+    for name, message, output_file_path in st.session_state.conversation:
+        # st.markdown("""---""")
+        st.subheader(name)
+        # st.text_area(label="You may read the result while the audio is being generated.", value=message, )
 
+        with open(output_file_path, "rb") as audio_file:
+            audio_bytes = audio_file.read()
 
-if st.session_state.output_file_path:
-    st.markdown("""---""")
-    st.subheader("Listen to Audio")
-
-    with open(st.session_state.output_file_path, "rb") as audio_file:
-        audio_bytes = audio_file.read()
-
-    st.audio(audio_bytes, format='audio/mp3', start_time=0)
+        # st.text(st.session_state.reviewer)
+        st.audio(audio_bytes, format='audio/mp3', start_time=0)
