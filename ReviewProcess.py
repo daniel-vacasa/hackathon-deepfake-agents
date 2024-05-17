@@ -53,6 +53,6 @@ manager.set_conversation_transcript(conversation_transcript)
 summary_of_conversation_prompt = manager.generate_ceo_summary_prompt()
 CEO_summary = client.evaluate_prompt(prompt=summary_of_conversation_prompt, temperature=0.1).content.replace(r'\r\n',
                                                                                                              '\n')
-print("The CEO returned: ")
+print(f"The CEO {manager.ceo_character} addressed the whole process in a company-wide Town Hall: ")
 print(CEO_summary)
 print("")
